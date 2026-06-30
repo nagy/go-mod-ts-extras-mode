@@ -97,6 +97,8 @@ Returns the spec node, or nil."
 
 ;;; URL provider
 
+(defvar go-mod-ts-extras-mode)
+
 (defun go-mod-ts-extras--url-provider ()
   "Return a pkg.go.dev URL if point is on a module_path in a require/replace spec.
 For replace_spec, only the replacement (second) module_path yields a URL."

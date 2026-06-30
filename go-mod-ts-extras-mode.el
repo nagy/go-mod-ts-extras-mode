@@ -54,6 +54,21 @@
   :type 'string
   :group 'go-mod-ts-extras)
 
+(defcustom go-mod-ts-extras-pkg-file-prefix nil
+  "Directory prefix for Go module file paths.
+If nil, the value of the GOMODCACHE environment variable is used,
+falling back to ~/go/pkg/mod/."
+  :type '(choice (const :tag "GOMODCACHE or ~/go/pkg/mod" nil)
+                 (directory :tag "Custom prefix"))
+  :group 'go-mod-ts-extras)
+
+(defun go-mod-ts-extras--pkg-file-prefix ()
+  "Return the Go module cache directory prefix, with trailing slash."
+  (file-name-as-directory
+   (or go-mod-ts-extras-pkg-file-prefix
+       (getenv "GOMODCACHE")
+       (expand-file-name "~/go/pkg/mod/"))))
+
 (defcustom go-mod-ts-extras-highlight-modules t
   "When non-nil, underline module paths in require/replace specs."
   :type 'boolean
@@ -95,23 +110,36 @@ Returns the spec node, or nil."
         (throw 'found (treesit-node-text child))))))
 
 
-;;; URL provider
+;;; Thing-at-point providers
 
 (defvar go-mod-ts-extras-mode)
 
-(defun go-mod-ts-extras--url-provider ()
-  "Return a pkg.go.dev URL if point is on a module_path in a require/replace spec.
-For replace_spec, only the replacement (second) module_path yields a URL."
+(defun go-mod-ts-extras--spec-info ()
+  "Return (module-path . version) for the module at point, or nil.
+For replace_spec, only the replacement (second) module_path qualifies."
   (when (and go-mod-ts-extras-mode
              (derived-mode-p 'go-mod-ts-mode)
              (treesit-ready-p 'gomod))
     (when-let* ((node (treesit-node-at (point)))
-                (spec (go-mod-ts-extras--find-spec-node node)))
-      (let ((module-path (go-mod-ts-extras--spec-module-path
-                          spec node))
-            (version (go-mod-ts-extras--spec-version spec)))
-        (when (and module-path version)
-          (format go-mod-ts-extras-pkg-url-template module-path version))))))
+                (spec (go-mod-ts-extras--find-spec-node node))
+                (module-path (go-mod-ts-extras--spec-module-path
+                              spec node))
+                (version (go-mod-ts-extras--spec-version spec)))
+      (cons module-path version))))
+
+(defun go-mod-ts-extras--url-provider ()
+  "Return a pkg.go.dev URL if point is on a module_path in a require/replace spec."
+  (when-let* ((spec (go-mod-ts-extras--spec-info)))
+    (format go-mod-ts-extras-pkg-url-template
+            (car spec) (cdr spec))))
+
+(defun go-mod-ts-extras--filename-provider ()
+  "Return a local file path if point is on a module_path in a require/replace spec.
+The directory prefix respects GOMODCACHE, falling back to ~/go/pkg/mod/."
+  (when-let* ((spec (go-mod-ts-extras--spec-info)))
+    (format "%s%s@%s/"
+            (go-mod-ts-extras--pkg-file-prefix)
+            (car spec) (cdr spec))))
 
 (defun go-mod-ts-extras--spec-module-path (spec-node &optional point-node)
   "Return the module_path string from SPEC-NODE.
@@ -172,11 +200,12 @@ When enabled, this mode:
     (go-mod-ts-extras--disable)))
 
 (defun go-mod-ts-extras--enable ()
-  "Register URL provider, keymap, and treesit font-lock rules."
-  ;; URL provider
+  "Register thing-at-point providers, keymap, and treesit font-lock rules."
+  ;; Thing-at-point providers (url and filename).
   (setq-local thing-at-point-provider-alist
               (cons '(url . go-mod-ts-extras--url-provider)
-                    thing-at-point-provider-alist))
+                    (cons '(filename . go-mod-ts-extras--filename-provider)
+                          thing-at-point-provider-alist)))
   ;; Treesit font-lock rules
   (when go-mod-ts-extras-highlight-modules
     (setq-local treesit-font-lock-settings
@@ -188,10 +217,14 @@ When enabled, this mode:
     (font-lock-ensure)))
 
 (defun go-mod-ts-extras--disable ()
-  "Unregister URL provider and treesit font-lock rules."
-  ;; URL provider
+  "Unregister thing-at-point providers and treesit font-lock rules."
+  ;; Thing-at-point providers.
   (setq-local thing-at-point-provider-alist
-              (assq-delete-all 'url thing-at-point-provider-alist))
+              (assq-delete-all
+               'filename
+               (assq-delete-all
+                'url
+                thing-at-point-provider-alist)))
   ;; Treesit font-lock rules
   (when go-mod-ts-extras-highlight-modules
     (let ((new-settings nil))

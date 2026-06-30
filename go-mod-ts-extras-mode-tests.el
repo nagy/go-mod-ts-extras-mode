@@ -184,24 +184,36 @@ require github.com/google/uuid v1.6.0
       (kill-buffer buf))))
 
 (ert-deftest go-mod-ts-extras-mode-disable ()
-  "Disabling the mode should restore default URL detection."
+  "Disabling the mode should stop returning our custom URL and filename."
   (skip-unless (treesit-ready-p 'gomod))
-  (let ((buf (go-mod-ts-extras-test--with-buffer
-              "module m
+  (let ((go-mod-ts-extras-pkg-file-prefix "/tmp/gocache/"))
+    (let ((buf (go-mod-ts-extras-test--with-buffer
+                "module m
 
 go 1.20
 
 require github.com/google/uuid v1.6.0
 ")))
-    (with-current-buffer buf
-      (goto-char (point-min))
-      (search-forward "github.com/google/uuid")
-      (goto-char (match-beginning 0))
-      (should (thing-at-point 'url))
-      ;; Disable and verify no URL detection
-      (go-mod-ts-extras-mode -1)
-      (should-not (thing-at-point 'url)))
-    (kill-buffer buf)))
+      (with-current-buffer buf
+        (setq-local go-mod-ts-extras-pkg-file-prefix "/tmp/gocache/")
+        (go-mod-ts-extras--disable)
+        (go-mod-ts-extras--enable)
+        (goto-char (point-min))
+        (search-forward "github.com/google/uuid")
+        (goto-char (match-beginning 0))
+        (should (string-prefix-p "https://pkg.go.dev/"
+                                 (thing-at-point 'url)))
+        (should (string-prefix-p "/tmp/gocache/"
+                                 (thing-at-point 'filename)))
+        ;; Disable and verify our custom providers are gone
+        (go-mod-ts-extras-mode -1)
+        ;; Our URL provider should stop returning pkg.go.dev
+        (should-not (thing-at-point 'url))
+        ;; Our filename provider should stop returning the cache path
+        (let ((f (thing-at-point 'filename)))
+          (should (or (not f)
+                      (not (string-prefix-p "/tmp/gocache/" f))))))
+      (kill-buffer buf))))
 
 (ert-deftest go-mod-ts-extras-url-indirect-dependency ()
   "URL detection works for indirect dependencies (with // indirect comment)."
@@ -258,6 +270,110 @@ go 1.20
       (goto-char (match-beginning 0))
       (should-error (go-mod-ts-extras-browse-at-point)))
     (kill-buffer buf)))
+
+(ert-deftest go-mod-ts-extras-filename-at-require-module-path ()
+  "Filename detection when point is on a module_path."
+  (skip-unless (treesit-ready-p 'gomod))
+  (let ((go-mod-ts-extras-pkg-file-prefix "/tmp/gocache/"))
+    (let ((buf (go-mod-ts-extras-test--with-buffer
+                "module m
+go 1.20
+require github.com/x v1.0.0
+")))
+      (with-current-buffer buf
+        (setq-local go-mod-ts-extras-pkg-file-prefix "/tmp/gocache/")
+        (go-mod-ts-extras--disable)
+        (go-mod-ts-extras--enable)
+        (goto-char (point-min))
+        (search-forward "github.com/x")
+        (goto-char (match-beginning 0))
+        (should (equal (thing-at-point 'filename)
+                       "/tmp/gocache/github.com/x@v1.0.0/")))
+      (kill-buffer buf))))
+
+(ert-deftest go-mod-ts-extras-filename-uses-gomodcache ()
+  "When GOMODCACHE is set, it should be used as the prefix."
+  (skip-unless (treesit-ready-p 'gomod))
+  (let ((buf (go-mod-ts-extras-test--with-buffer
+              "module m
+go 1.20
+require github.com/x v1.0.0
+"))
+        (go-mod-ts-extras-pkg-file-prefix nil))
+    (with-current-buffer buf
+      (setenv "GOMODCACHE" "/opt/gocache")
+      (go-mod-ts-extras--disable)
+      (go-mod-ts-extras--enable)
+      (goto-char (point-min))
+      (search-forward "github.com/x")
+      (goto-char (match-beginning 0))
+      (should (equal (thing-at-point 'filename)
+                     "/opt/gocache/github.com/x@v1.0.0/"))
+      (setenv "GOMODCACHE" nil))
+    (kill-buffer buf)))
+
+(ert-deftest go-mod-ts-extras-filename-custom-prefix ()
+  "Custom file prefix should be respected."
+  (skip-unless (treesit-ready-p 'gomod))
+  (let ((go-mod-ts-extras-pkg-file-prefix "/opt/custom/"))
+    (let ((buf (go-mod-ts-extras-test--with-buffer
+                "module m
+go 1.20
+require github.com/x v1.0.0
+")))
+      (with-current-buffer buf
+        (setq-local go-mod-ts-extras-pkg-file-prefix "/opt/custom/")
+        (go-mod-ts-extras--disable)
+        (go-mod-ts-extras--enable)
+        (goto-char (point-min))
+        (search-forward "github.com/x")
+        (goto-char (match-beginning 0))
+        (should (equal (thing-at-point 'filename)
+                       "/opt/custom/github.com/x@v1.0.0/")))
+      (kill-buffer buf))))
+
+(ert-deftest go-mod-ts-extras-filename-not-on-module-directive ()
+  "Point on the module directive should not match our filename provider."
+  (skip-unless (treesit-ready-p 'gomod))
+  (let ((go-mod-ts-extras-pkg-file-prefix "/tmp/gocache/"))
+    (let ((buf (go-mod-ts-extras-test--with-buffer
+                "module m
+go 1.20
+")))
+      (with-current-buffer buf
+        (setq-local go-mod-ts-extras-pkg-file-prefix "/tmp/gocache/")
+        (go-mod-ts-extras--disable)
+        (go-mod-ts-extras--enable)
+        (goto-char (point-min))
+        (search-forward "module")
+        (goto-char (match-beginning 0))
+        ;; Our provider returns nil; Emacs's default filename provider
+        ;; may or may not pick up "m" — either way, it shouldn't match
+        ;; our cache-directory format.
+        (let ((f (thing-at-point 'filename)))
+          (should (or (not f)
+                      (not (string-prefix-p "/tmp/gocache/" f))))))
+      (kill-buffer buf))))
+
+(ert-deftest go-mod-ts-extras-filename-on-version ()
+  "Point on the version string should resolve to the file path."
+  (skip-unless (treesit-ready-p 'gomod))
+  (let ((go-mod-ts-extras-pkg-file-prefix "/tmp/gocache/"))
+    (let ((buf (go-mod-ts-extras-test--with-buffer
+                "module m
+go 1.20
+require golang.org/x/net v0.20.0
+")))
+      (with-current-buffer buf
+        (setq-local go-mod-ts-extras-pkg-file-prefix "/tmp/gocache/")
+        (go-mod-ts-extras--disable)
+        (go-mod-ts-extras--enable)
+        (goto-char (point-min))
+        (search-forward "v0.20.0")
+        (goto-char (match-beginning 0))
+        (should (equal (thing-at-point 'filename)
+                       "/tmp/gocache/golang.org/x/net@v0.20.0/")))
+      (kill-buffer buf))))
 
 (ert-deftest go-mod-ts-extras-url-multiple-require ()
   "URL detection works when multiple require specs are present."

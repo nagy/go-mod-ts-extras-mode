@@ -375,6 +375,86 @@ require golang.org/x/net v0.20.0
                        "/tmp/gocache/golang.org/x/net@v0.20.0/")))
       (kill-buffer buf))))
 
+(ert-deftest go-mod-ts-extras-url-goprivate-match ()
+  "URL detection should return nil for modules matching GOPRIVATE."
+  (skip-unless (treesit-ready-p 'gomod))
+  (let ((buf (go-mod-ts-extras-test--with-buffer
+              "module m
+go 1.20
+require gitlab.internal/foo/bar v1.0.0
+")))
+    (with-current-buffer buf
+      (setenv "GOPRIVATE" "gitlab.internal/*")
+      (go-mod-ts-extras--disable)
+      (go-mod-ts-extras--enable)
+      (goto-char (point-min))
+      (search-forward "gitlab.internal/foo/bar")
+      (goto-char (match-beginning 0))
+      (should-not (thing-at-point 'url))
+      (setenv "GOPRIVATE" nil))
+    (kill-buffer buf)))
+
+(ert-deftest go-mod-ts-extras-url-goprivate-no-match ()
+  "URL detection should still work for modules not matching GOPRIVATE."
+  (skip-unless (treesit-ready-p 'gomod))
+  (let ((buf (go-mod-ts-extras-test--with-buffer
+              "module m
+go 1.20
+require github.com/x v1.0.0
+")))
+    (with-current-buffer buf
+      (setenv "GOPRIVATE" "gitlab.internal/*")
+      (go-mod-ts-extras--disable)
+      (go-mod-ts-extras--enable)
+      (goto-char (point-min))
+      (search-forward "github.com/x")
+      (goto-char (match-beginning 0))
+      (should (equal (thing-at-point 'url)
+                     "https://pkg.go.dev/github.com/x@v1.0.0"))
+      (setenv "GOPRIVATE" nil))
+    (kill-buffer buf)))
+
+(ert-deftest go-mod-ts-extras-url-goprivate-wildcard ()
+  "GOPRIVATE wildcard patterns like *.corp.com should match subdomains."
+  (skip-unless (treesit-ready-p 'gomod))
+  (let ((buf (go-mod-ts-extras-test--with-buffer
+              "module m
+go 1.20
+require foo.corp.com/lib v1.0.0
+")))
+    (with-current-buffer buf
+      (setenv "GOPRIVATE" "*.corp.com")
+      (go-mod-ts-extras--disable)
+      (go-mod-ts-extras--enable)
+      (goto-char (point-min))
+      (search-forward "foo.corp.com/lib")
+      (goto-char (match-beginning 0))
+      (should-not (thing-at-point 'url))
+      (setenv "GOPRIVATE" nil))
+    (kill-buffer buf)))
+
+(ert-deftest go-mod-ts-extras-filename-unaffected-by-goprivate ()
+  "Filename should still be returned for private modules."
+  (skip-unless (treesit-ready-p 'gomod))
+  (let ((go-mod-ts-extras-pkg-file-prefix "/tmp/gocache/"))
+    (let ((buf (go-mod-ts-extras-test--with-buffer
+                "module m
+go 1.20
+require gitlab.internal/foo/bar v1.0.0
+")))
+      (with-current-buffer buf
+        (setenv "GOPRIVATE" "gitlab.internal/*")
+        (setq-local go-mod-ts-extras-pkg-file-prefix "/tmp/gocache/")
+        (go-mod-ts-extras--disable)
+        (go-mod-ts-extras--enable)
+        (goto-char (point-min))
+        (search-forward "gitlab.internal/foo/bar")
+        (goto-char (match-beginning 0))
+        (should (equal (thing-at-point 'filename)
+                       "/tmp/gocache/gitlab.internal/foo/bar@v1.0.0/"))
+        (setenv "GOPRIVATE" nil))
+      (kill-buffer buf))))
+
 (ert-deftest go-mod-ts-extras-url-multiple-require ()
   "URL detection works when multiple require specs are present."
   (skip-unless (treesit-ready-p 'gomod))

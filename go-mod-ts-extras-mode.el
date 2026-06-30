@@ -127,9 +127,26 @@ For replace_spec, only the replacement (second) module_path qualifies."
                 (version (go-mod-ts-extras--spec-version spec)))
       (cons module-path version))))
 
+(defun go-mod-ts-extras--private-p (module-path)
+  "Return non-nil if MODULE-PATH matches a GOPRIVATE pattern.
+GOPRIVATE is a comma-separated list of glob patterns in Go's
+`path.Match' syntax.  Patterns are matched as module-path prefixes."
+  (when-let* ((goprivate (getenv "GOPRIVATE")))
+    (cl-some (lambda (pat)
+               (let ((re (wildcard-to-regexp pat)))
+                 ;; Strip \` and \' anchors, then allow an optional
+                 ;; sub-path after the pattern.
+                 (setq re (concat (substring re 2 -2)
+                                  "\\(/.*\\)?"))
+                 (setq re (concat "\\`" re "\\'"))
+                 (string-match-p re module-path)))
+             (split-string goprivate "," t " "))))
+
 (defun go-mod-ts-extras--url-provider ()
-  "Return a pkg.go.dev URL if point is on a module_path in a require/replace spec."
-  (when-let* ((spec (go-mod-ts-extras--spec-info)))
+  "Return a pkg.go.dev URL if point is on a module_path in a require/replace spec.
+Returns nil for private modules (matching GOPRIVATE)."
+  (when-let* ((spec (go-mod-ts-extras--spec-info))
+              ((not (go-mod-ts-extras--private-p (car spec)))))
     (format go-mod-ts-extras-pkg-url-template
             (car spec) (cdr spec))))
 

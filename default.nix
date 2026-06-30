@@ -11,6 +11,9 @@ melpaBuild {
   version = "0.1.0";
   src = lib.cleanSource ./.;
 
+  emacs = emacs.pkgs.withPackages
+    (epkgs: [ epkgs.treesit-grammars.with-all-grammars ]);
+
   turnCompilationWarningToError = true;
 
   meta = {

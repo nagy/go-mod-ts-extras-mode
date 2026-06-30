@@ -146,11 +146,9 @@ POINT-NODE falls within it; otherwise returns nil."
 
 ;;; Minor mode
 
-(defvar go-mod-ts-extras-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "RET") #'go-mod-ts-extras-browse-at-point)
-    map)
-  "Keymap for `go-mod-ts-extras-mode'.")
+(defvar-keymap go-mod-ts-extras-mode-map
+  :doc "Keymap for `go-mod-ts-extras-mode'."
+  "RET" #'go-mod-ts-extras-browse-at-point)
 
 (defun go-mod-ts-extras-browse-at-point ()
   "Open the pkg.go.dev URL for the module path at point in a browser."

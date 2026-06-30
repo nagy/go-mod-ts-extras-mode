@@ -6,15 +6,28 @@
   melpaBuild ? emacsPackages.melpaBuild,
 }:
 
-melpaBuild {
+let
+  emacsWithGrammars = emacs.pkgs.withPackages
+    (epkgs: [ epkgs.treesit-grammars.with-all-grammars ]);
+in
+melpaBuild (finalAttrs: {
   pname = "go-mod-ts-extras-mode";
   version = "0.1.0";
   src = lib.cleanSource ./.;
 
-  emacs = emacs.pkgs.withPackages
-    (epkgs: [ epkgs.treesit-grammars.with-all-grammars ]);
+  emacs = emacsWithGrammars;
 
   turnCompilationWarningToError = true;
+
+  checkPhase = ''
+    runHook preCheck
+    ${emacsWithGrammars}/bin/emacs --batch -L . \
+      -l go-mod-ts-extras-mode-tests.el \
+      -f ert-run-tests-batch-and-exit
+    runHook postCheck
+  '';
+
+  doCheck = true;
 
   meta = {
     description = "pkg.go.dev extras for go-mod-ts-mode";
@@ -29,4 +42,4 @@ melpaBuild {
     maintainers = with lib.maintainers; [ nagy ];
     platforms = lib.platforms.unix;
   };
-}
+})

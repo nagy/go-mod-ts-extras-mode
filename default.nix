@@ -6,22 +6,18 @@
   melpaBuild ? emacsPackages.melpaBuild,
 }:
 
-let
-  emacsWithGrammars = emacs.pkgs.withPackages
-    (epkgs: [ epkgs.treesit-grammars.with-all-grammars ]);
-in
 melpaBuild (finalAttrs: {
   pname = "go-mod-ts-extras-mode";
   version = "0.1.0";
   src = lib.cleanSource ./.;
 
-  emacs = emacsWithGrammars;
+  packageRequires = [ emacsPackages.treesit-grammars.with-all-grammars ];
 
   turnCompilationWarningToError = true;
 
   checkPhase = ''
     runHook preCheck
-    ${emacsWithGrammars}/bin/emacs --batch -L . \
+    emacs --batch -L . \
       -l go-mod-ts-extras-mode-tests.el \
       -f ert-run-tests-batch-and-exit
     runHook postCheck

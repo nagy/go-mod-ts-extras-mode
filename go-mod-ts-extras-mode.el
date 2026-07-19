@@ -20,6 +20,7 @@
 ;; Version: 0.1.0
 ;; Keywords: languages, tools
 ;; Package-Requires: ((emacs "30.1"))
+;; URL: https://github.com/nagy/go-mod-ts-extras-mode
 
 ;;; Commentary:
 
@@ -28,6 +29,9 @@
 ;;
 ;;   - URL detection: `thing-at-point' for 'url returns the pkg.go.dev
 ;;     page for the Go module whose module_path is under point.
+;;
+;;   - Filename detection: `thing-at-point' for 'filename returns the
+;;     local module cache directory for the module under point.
 ;;
 ;;   - Underline highlighting: module_path nodes inside require and
 ;;     replace specs are underlined via treesit font-lock rules.
@@ -41,6 +45,8 @@
 
 (require 'go-ts-mode)
 (require 'thingatpt)
+(require 'cl-lib)
+(require 'treesit)
 
 (defgroup go-mod-ts-extras nil
   "go.mod extras for `go-mod-ts-mode'."
@@ -57,7 +63,7 @@
 (defcustom go-mod-ts-extras-pkg-file-prefix nil
   "Directory prefix for Go module file paths.
 If nil, the value of the GOMODCACHE environment variable is used,
-falling back to ~/go/pkg/mod/."
+falling back to $GOPATH/pkg/mod and then ~/go/pkg/mod/."
   :type '(choice (const :tag "GOMODCACHE or ~/go/pkg/mod" nil)
                  (directory :tag "Custom prefix"))
   :group 'go-mod-ts-extras)
@@ -67,7 +73,9 @@ falling back to ~/go/pkg/mod/."
   (file-name-as-directory
    (or go-mod-ts-extras-pkg-file-prefix
        (getenv "GOMODCACHE")
-       (expand-file-name "~/go/pkg/mod/"))))
+       (let ((gopath (or (getenv "GOPATH")
+                         (expand-file-name "~/go"))))
+         (expand-file-name "pkg/mod/" gopath)))))
 
 (defcustom go-mod-ts-extras-highlight-modules t
   "When non-nil, underline module paths in require/replace specs."
@@ -79,9 +87,6 @@ falling back to ~/go/pkg/mod/."
   "Face for module paths inside require/replace specs."
   :group 'go-mod-ts-extras)
 
-
-;;; Treesit font-lock rules
-
 (defvar go-mod-ts-extras--font-lock-rules
   (treesit-font-lock-rules
    :language 'gomod
@@ -91,8 +96,7 @@ falling back to ~/go/pkg/mod/."
      (replace_spec (module_path) @go-mod-ts-extras-module-path-face)))
   "Treesit font-lock rules for go.mod module-path highlighting.")
 
-
-;;; Tree-sitter helpers (for URL provider)
+;;; Tree-sitter helpers
 
 (defun go-mod-ts-extras--find-spec-node (node)
   "Walk up from NODE to find a require_spec or replace_spec ancestor.
@@ -102,13 +106,88 @@ Returns the spec node, or nil."
    (lambda (n)
      (member (treesit-node-type n) '("require_spec" "replace_spec")))))
 
-(defun go-mod-ts-extras--spec-version (spec-node)
-  "Return the version string from SPEC-NODE, or nil."
-  (catch 'found
-    (dolist (child (treesit-node-children spec-node))
-      (when (equal (treesit-node-type child) "version")
-        (throw 'found (treesit-node-text child))))))
+(defun go-mod-ts-extras--spec-module-path-node (spec-node &optional point-node)
+  "Return the module_path node from SPEC-NODE that POINT-NODE falls within.
+For require_spec, returns the first (only) module_path.
+For replace_spec, returns the second (replacement) module_path only if
+POINT-NODE falls within it; otherwise returns nil."
+  (let ((type (treesit-node-type spec-node)))
+    (cond
+     ((equal type "require_spec")
+      (let ((mp (treesit-node-child spec-node 0 t)))
+        (when (and mp (equal (treesit-node-type mp) "module_path"))
+          mp)))
+     ((equal type "replace_spec")
+      (let ((mp-nodes (treesit-filter-child
+                       spec-node
+                       (lambda (n) (equal (treesit-node-type n) "module_path")))))
+        (when (>= (length mp-nodes) 2)
+          (let ((replacement (nth 1 mp-nodes)))
+            (when (or (not point-node)
+                      (treesit-node-eq point-node replacement)
+                      (and (>= (treesit-node-start point-node)
+                               (treesit-node-start replacement))
+                           (<= (treesit-node-end point-node)
+                               (treesit-node-end replacement))))
+              replacement)))))
+     (t nil))))
 
+(defun go-mod-ts-extras--find-version-after (parent after-node)
+  "Return the first version child of PARENT that starts at or after AFTER-NODE.
+Returns the node, or nil."
+  (catch 'found
+    (dolist (child (treesit-node-children parent))
+      (when (and (equal (treesit-node-type child) "version")
+                 (>= (treesit-node-start child) (treesit-node-end after-node)))
+        (throw 'found child)))))
+
+;;; GOPRIVATE glob matching
+
+(defun go-mod-ts-extras--glob-to-regexp (pattern)
+  "Convert a Go `path.Match' PATTERN to an Emacs regexp.
+In Go's path.Match, `*' matches any sequence of non-`/' characters,
+`?' matches any single non-`/' character, and other regexp-special
+characters are matched literally."
+  (let ((re "")
+        (i 0)
+        (len (length pattern)))
+    (while (< i len)
+      (let ((c (aref pattern i)))
+        (cl-incf i)
+        (cond
+         ((eq c ?*) (setq re (concat re "[^/]*")))
+         ((eq c ??) (setq re (concat re "[^/]")))
+         ((eq c ?\\)
+          (when (< i len)
+            (setq re (concat re (regexp-quote (string (aref pattern i)))))
+            (cl-incf i)))
+         ((member c '(?\[ ?\] ?^ ?$ ?. ?+ ?\( ?\) ?\{ ?\} ?|))
+          (setq re (concat re "\\" (string c))))
+         (t (setq re (concat re (string c)))))))
+    (concat "\\`" re "\\(/.*\\)?\\'")))
+
+(defun go-mod-ts-extras--private-p (module-path)
+  "Return non-nil if MODULE-PATH matches a GOPRIVATE pattern.
+GOPRIVATE is a comma-separated list of glob patterns in Go's
+`path.Match' syntax, where `*' does not match `/'."
+  (when-let* ((goprivate (getenv "GOPRIVATE")))
+    (cl-some (lambda (pat)
+               (string-match-p (go-mod-ts-extras--glob-to-regexp pat)
+                               module-path))
+             (split-string goprivate "," t " "))))
+
+;;; Module cache path
+
+(defun go-mod-ts-extras--module-cache-path (module-path version)
+  "Return the filesystem path for MODULE-PATH@VERSION in the Go module cache.
+Go's module cache escapes uppercase letters as `!lowercase' (module.EscapePath)."
+  (concat (go-mod-ts-extras--pkg-file-prefix)
+          (let ((case-fold-search nil))
+            (replace-regexp-in-string
+             "[A-Z]"
+             (lambda (c) (concat "!" (downcase c)))
+             module-path t t))
+          "@" version "/"))
 
 ;;; Thing-at-point providers
 
@@ -116,31 +195,19 @@ Returns the spec node, or nil."
 
 (defun go-mod-ts-extras--spec-info ()
   "Return (module-path . version) for the module at point, or nil.
-For replace_spec, only the replacement (second) module_path qualifies."
+For replace_spec, only the replacement (second) module_path qualifies.
+The version is the one that follows the relevant module_path node,
+fixing the bug where a replace spec `old v1 => new v2' returned v1."
   (when (and go-mod-ts-extras-mode
              (derived-mode-p 'go-mod-ts-mode)
              (treesit-ready-p 'gomod))
     (when-let* ((node (treesit-node-at (point)))
                 (spec (go-mod-ts-extras--find-spec-node node))
-                (module-path (go-mod-ts-extras--spec-module-path
-                              spec node))
-                (version (go-mod-ts-extras--spec-version spec)))
+                (mp-node (go-mod-ts-extras--spec-module-path-node spec node))
+                (module-path (treesit-node-text mp-node))
+                (ver-node (go-mod-ts-extras--find-version-after spec mp-node))
+                (version (treesit-node-text ver-node)))
       (cons module-path version))))
-
-(defun go-mod-ts-extras--private-p (module-path)
-  "Return non-nil if MODULE-PATH matches a GOPRIVATE pattern.
-GOPRIVATE is a comma-separated list of glob patterns in Go's
-`path.Match' syntax.  Patterns are matched as module-path prefixes."
-  (when-let* ((goprivate (getenv "GOPRIVATE")))
-    (cl-some (lambda (pat)
-               (let ((re (wildcard-to-regexp pat)))
-                 ;; Strip \` and \' anchors, then allow an optional
-                 ;; sub-path after the pattern.
-                 (setq re (concat (substring re 2 -2)
-                                  "\\(/.*\\)?"))
-                 (setq re (concat "\\`" re "\\'"))
-                 (string-match-p re module-path)))
-             (split-string goprivate "," t " "))))
 
 (defun go-mod-ts-extras--url-provider ()
   "Return a pkg.go.dev URL if point is on a module_path in a require/replace spec.
@@ -152,51 +219,29 @@ Returns nil for private modules (matching GOPRIVATE)."
 
 (defun go-mod-ts-extras--filename-provider ()
   "Return a local file path if point is on a module_path in a require/replace spec.
-The directory prefix respects GOMODCACHE, falling back to ~/go/pkg/mod/."
+The path respects Go's module cache escaping (uppercase → !lowercase)."
   (when-let* ((spec (go-mod-ts-extras--spec-info)))
-    (format "%s%s@%s/"
-            (go-mod-ts-extras--pkg-file-prefix)
-            (car spec) (cdr spec))))
+    (go-mod-ts-extras--module-cache-path (car spec) (cdr spec))))
 
-(defun go-mod-ts-extras--spec-module-path (spec-node &optional point-node)
-  "Return the module_path string from SPEC-NODE.
-For require_spec, returns the first module_path.
-For replace_spec, returns the second (replacement) module_path only if
-POINT-NODE falls within it; otherwise returns nil."
-  (let ((type (treesit-node-type spec-node)))
-    (cond
-     ((equal type "require_spec")
-      (let ((mp (treesit-node-child spec-node 0 t)))
-        (when (and mp (equal (treesit-node-type mp) "module_path"))
-          (treesit-node-text mp))))
-     ((equal type "replace_spec")
-      ;; replace_spec: (module_path "=>" module_path version?)
-      (let ((mp-nodes nil))
-        (dolist (child (treesit-node-children spec-node))
-          (when (equal (treesit-node-type child) "module_path")
-            (push child mp-nodes)))
-        (setq mp-nodes (nreverse mp-nodes))
-        (when (>= (length mp-nodes) 2)
-          (let ((replacement (nth 1 mp-nodes)))
-            (when (or (not point-node)
-                      (eq point-node replacement)
-                      (and point-node
-                           (>= (treesit-node-start point-node)
-                               (treesit-node-start replacement))
-                           (<= (treesit-node-end point-node)
-                               (treesit-node-end replacement))))
-              (treesit-node-text replacement))))))
-     (t nil))))
+(defun go-mod-ts-extras--bounds-of-thing-at-point ()
+  "Return (START . END) for the module_path under point, or nil."
+  (when (and go-mod-ts-extras-mode
+             (derived-mode-p 'go-mod-ts-mode)
+             (treesit-ready-p 'gomod))
+    (when-let* ((node (treesit-node-at (point)))
+                (spec (go-mod-ts-extras--find-spec-node node))
+                (mp-node (go-mod-ts-extras--spec-module-path-node spec node)))
+      (cons (treesit-node-start mp-node)
+            (treesit-node-end mp-node)))))
+
 
 
 ;;; Minor mode
 
-(defvar-keymap go-mod-ts-extras-mode-map
-  :doc "Keymap for `go-mod-ts-extras-mode'."
-  "RET" #'go-mod-ts-extras-browse-at-point)
-
+;;;###autoload
 (defun go-mod-ts-extras-browse-at-point ()
-  "Open the pkg.go.dev URL for the module path at point in a browser."
+  "Open the pkg.go.dev URL for the module path at point in a browser.
+Not bound to any key by default; bind it yourself or use \\[execute-extended-command]."
   (interactive)
   (if-let* ((url (thing-at-point 'url)))
       (browse-url url)
@@ -209,48 +254,58 @@ POINT-NODE falls within it; otherwise returns nil."
 When enabled, this mode:
   - Underlines module paths in require and replace specs.
   - Makes `thing-at-point' return pkg.go.dev URLs for those paths.
-  - Pressing RET on a module path opens it on pkg.go.dev."
+  - Makes `thing-at-point' return local module cache paths."
   :lighter " go.mod+"
-  :keymap go-mod-ts-extras-mode-map
   (if go-mod-ts-extras-mode
       (go-mod-ts-extras--enable)
     (go-mod-ts-extras--disable)))
 
 (defun go-mod-ts-extras--enable ()
-  "Register thing-at-point providers, keymap, and treesit font-lock rules."
+  "Register thing-at-point providers and treesit font-lock rules."
   ;; Thing-at-point providers (url and filename).
+  ;; Remove-first-then-add for idempotency; use exact-pair removal so
+  ;; other packages' providers are not deleted.
   (setq-local thing-at-point-provider-alist
               (cons '(url . go-mod-ts-extras--url-provider)
                     (cons '(filename . go-mod-ts-extras--filename-provider)
-                          thing-at-point-provider-alist)))
-  ;; Treesit font-lock rules
+                          (remove '(url . go-mod-ts-extras--url-provider)
+                                  (remove '(filename . go-mod-ts-extras--filename-provider)
+                                          thing-at-point-provider-alist)))))
+
+  ;; Bounds providers (Emacs 30.1+).
+  (setq-local bounds-of-thing-at-point-provider-alist
+              (cons '(url . go-mod-ts-extras--bounds-of-thing-at-point)
+                    (remove '(url . go-mod-ts-extras--bounds-of-thing-at-point)
+                            bounds-of-thing-at-point-provider-alist)))
+  ;; Treesit font-lock rules using the Emacs 30.1 API, which correctly
+  ;; appends the feature without shifting existing features.
   (when go-mod-ts-extras-highlight-modules
-    (setq-local treesit-font-lock-settings
-                (append treesit-font-lock-settings
-                        go-mod-ts-extras--font-lock-rules))
-    (add-to-list 'treesit-font-lock-feature-list '(go-mod-extras))
+    (treesit-add-font-lock-rules
+     go-mod-ts-extras--font-lock-rules)
     (treesit-font-lock-recompute-features)
     (font-lock-flush)
     (font-lock-ensure)))
 
 (defun go-mod-ts-extras--disable ()
   "Unregister thing-at-point providers and treesit font-lock rules."
-  ;; Thing-at-point providers.
+  ;; Thing-at-point providers.  Remove our exact pairs only.
   (setq-local thing-at-point-provider-alist
-              (assq-delete-all
-               'filename
-               (assq-delete-all
-                'url
-                thing-at-point-provider-alist)))
-  ;; Treesit font-lock rules
+              (remove '(url . go-mod-ts-extras--url-provider)
+                      thing-at-point-provider-alist))
+  (setq-local thing-at-point-provider-alist
+              (remove '(filename . go-mod-ts-extras--filename-provider)
+                      thing-at-point-provider-alist))
+
+  ;; Bounds providers.
+  (setq-local bounds-of-thing-at-point-provider-alist
+              (remove '(url . go-mod-ts-extras--bounds-of-thing-at-point)
+                      bounds-of-thing-at-point-provider-alist))
+  ;; Treesit font-lock rules.  Identify our setting by the feature
+  ;; symbol at position 2 in the list (QUERY ENABLE FEATURE OVERRIDE ...).
   (when go-mod-ts-extras-highlight-modules
-    (let ((new-settings nil))
-      (dolist (setting treesit-font-lock-settings)
-        (unless (eq (plist-get (cdr setting) :feature) 'go-mod-extras)
-          (push setting new-settings)))
-      (setq-local treesit-font-lock-settings (nreverse new-settings)))
-    (setq-local treesit-font-lock-feature-list
-                (remove '(go-mod-extras) treesit-font-lock-feature-list))
+    (setq-local treesit-font-lock-settings
+                (cl-remove 'go-mod-extras treesit-font-lock-settings
+                           :key (lambda (s) (nth 2 s))))
     (treesit-font-lock-recompute-features)
     (font-lock-flush)
     (font-lock-ensure)))

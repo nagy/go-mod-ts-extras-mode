@@ -31,7 +31,8 @@ melpaBuild (finalAttrs: {
       A minor mode that enhances go-mod-ts-mode buffers with
       pkg.go.dev URL detection and browsing.  Module paths inside
       require and replace directives are underlined, thing-at-point
-      returns their pkg.go.dev URLs, and RET opens them in a browser.
+      returns their pkg.go.dev URLs, and
+      `go-mod-ts-extras-browse-at-point' opens them in a browser.
     '';
     license = lib.licenses.agpl3Plus;
     homepage = "https://github.com/nagy/go-mod-ts-extras-mode";

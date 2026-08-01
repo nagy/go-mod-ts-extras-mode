@@ -28,7 +28,7 @@
 ;; go.mod-specific enhancements to `go-mod-ts-mode' buffers:
 ;;
 ;;   - URL detection: `thing-at-point' for 'url returns the pkg.go.dev
-;;     page for the Go module whose module_path is under point.
+;;     page for the Go module path under point.
 ;;
 ;;   - Filename detection: `thing-at-point' for 'filename returns the
 ;;     local module cache directory for the module under point.
@@ -109,8 +109,9 @@ Returns the spec node, or nil."
 (defun go-mod-ts-extras--spec-module-path-node (spec-node &optional point-node)
   "Return the module_path node from SPEC-NODE that POINT-NODE falls within.
 For require_spec, returns the first (only) module_path.
-For replace_spec, returns the second (replacement) module_path only if
-POINT-NODE falls within it; otherwise returns nil."
+For replace_spec, returns the second (replacement) module_path if POINT-NODE
+is on it, on its version, or after it (i.e. the `=> new' side); returns nil
+when POINT-NODE is on the original (first) module_path or its version."
   (let ((type (treesit-node-type spec-node)))
     (cond
      ((equal type "require_spec")
@@ -124,11 +125,8 @@ POINT-NODE falls within it; otherwise returns nil."
         (when (>= (length mp-nodes) 2)
           (let ((replacement (nth 1 mp-nodes)))
             (when (or (not point-node)
-                      (treesit-node-eq point-node replacement)
-                      (and (>= (treesit-node-start point-node)
-                               (treesit-node-start replacement))
-                           (<= (treesit-node-end point-node)
-                               (treesit-node-end replacement))))
+                      (>= (treesit-node-start point-node)
+                          (treesit-node-start replacement)))
               replacement)))))
      (t nil))))
 
@@ -180,7 +178,10 @@ GOPRIVATE is a comma-separated list of glob patterns in Go's
 
 (defun go-mod-ts-extras--module-cache-path (module-path version)
   "Return the filesystem path for MODULE-PATH@VERSION in the Go module cache.
-Go's module cache escapes uppercase letters as `!lowercase' (module.EscapePath)."
+Go's module cache escapes uppercase letters as `!lowercase' (module.EscapePath).
+Note: this matches the cache directory naming for module paths, but is a
+heuristic for full paths: pseudo-versions escape `+' as `!pseudo' and literal
+`!' characters are doubled, which this does not account for."
   (concat (go-mod-ts-extras--pkg-file-prefix)
           (let ((case-fold-search nil))
             (replace-regexp-in-string
@@ -219,9 +220,22 @@ Returns nil for private modules (matching GOPRIVATE)."
 
 (defun go-mod-ts-extras--filename-provider ()
   "Return a local file path if point is on a module_path in a require/replace spec.
-The path respects Go's module cache escaping (uppercase → !lowercase)."
-  (when-let* ((spec (go-mod-ts-extras--spec-info)))
-    (go-mod-ts-extras--module-cache-path (car spec) (cdr spec))))
+The path respects Go's module cache escaping (uppercase → !lowercase).
+For a replace spec targeting a local directory (`replace a => ./dir'),
+returns that directory itself."
+  (when (and go-mod-ts-extras-mode
+             (derived-mode-p 'go-mod-ts-mode)
+             (treesit-ready-p 'gomod))
+    (or
+     ;; Local-directory replace target: `replace a => ./dir'.
+     (when-let* ((node (treesit-node-at (point)))
+                 ((equal (treesit-node-type node) "file_path"))
+                 (spec (go-mod-ts-extras--find-spec-node node))
+                 ((equal (treesit-node-type spec) "replace_spec")))
+       (treesit-node-text node))
+     ;; Module cache path for the module under point.
+     (when-let* ((spec (go-mod-ts-extras--spec-info)))
+       (go-mod-ts-extras--module-cache-path (car spec) (cdr spec))))))
 
 (defun go-mod-ts-extras--bounds-of-thing-at-point ()
   "Return (START . END) for the module_path under point, or nil."

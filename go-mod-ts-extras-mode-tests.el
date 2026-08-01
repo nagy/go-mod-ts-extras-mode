@@ -29,16 +29,18 @@
 
 ;;; Helper: create a go-mod-ts-mode buffer with content and return it.
 
-(defun go-mod-ts-extras-test--with-buffer (content)
+(defun go-mod-ts-extras-test--with-buffer (content &optional enable)
   "Create a temporary `go-mod-ts-mode' buffer with CONTENT.
-Enables `go-mod-ts-extras-mode', moves point to the beginning, and
-returns the buffer."
+When ENABLE is non-nil (default), enables `go-mod-ts-extras-mode',
+moves point to the beginning, and returns the buffer.
+When ENABLE is nil, leaves the mode disabled."
   (let ((buf (generate-new-buffer " *go-mod-ts-extras-test*")))
     (with-current-buffer buf
       (go-mod-ts-mode)
       (insert content)
       (goto-char (point-min))
-      (go-mod-ts-extras-mode 1)
+      (when enable
+        (go-mod-ts-extras-mode 1))
       (setq buffer-file-name "/tmp/go.mod"))
     buf))
 
@@ -64,7 +66,7 @@ Restores the previous value afterwards."
 go 1.26.3
 
 require github.com/google/uuid v1.6.0
-")))
+" t)))
     (unwind-protect
         (with-current-buffer buf
           (goto-char (point-min))
@@ -85,7 +87,7 @@ go 1.26.3
 require (
     github.com/google/uuid v1.6.0
 )
-")))
+" t)))
     (unwind-protect
         (with-current-buffer buf
           (goto-char (point-min))
@@ -104,7 +106,7 @@ require (
 go 1.20
 
 require golang.org/x/net v0.20.0
-")))
+" t)))
     (unwind-protect
         (with-current-buffer buf
           (goto-char (point-min))
@@ -121,7 +123,7 @@ require golang.org/x/net v0.20.0
               "module example.com/foo/baz
 
 go 1.26.3
-")))
+" t)))
     (unwind-protect
         (with-current-buffer buf
           (goto-char (point-min))
@@ -141,7 +143,7 @@ go 1.20
 require golang.org/x/net v1.0.0
 
 replace golang.org/x/net => github.com/other/net v0.1.0
-")))
+" t)))
     (unwind-protect
         (with-current-buffer buf
           (goto-char (point-min))
@@ -162,7 +164,7 @@ go 1.20
 require golang.org/x/net v1.0.0
 
 replace golang.org/x/net => github.com/other/net v0.1.0
-")))
+" t)))
     (unwind-protect
         (with-current-buffer buf
           ;; First occurrence is in require, second is in replace (original).
@@ -185,7 +187,7 @@ replace golang.org/x/net => github.com/other/net v0.1.0
 go 1.20
 
 replace golang.org/x/net v1.9.9 => github.com/other/net v0.1.0
-")))
+" t)))
     (unwind-protect
         (with-current-buffer buf
           (goto-char (point-min))
@@ -205,7 +207,7 @@ replace golang.org/x/net v1.9.9 => github.com/other/net v0.1.0
 go 1.20
 
 require github.com/google/uuid v1.6.0
-")))
+" t)))
       (unwind-protect
           (with-current-buffer buf
             (goto-char (point-min))
@@ -227,7 +229,7 @@ go 1.20
 require (
     golang.org/x/net v0.20.0 // indirect
 )
-")))
+" t)))
     (unwind-protect
         (with-current-buffer buf
           (goto-char (point-min))
@@ -250,7 +252,7 @@ require (
     golang.org/x/net v0.20.0
     github.com/stretchr/testify v1.8.0
 )
-")))
+" t)))
     (unwind-protect
         (with-current-buffer buf
           (goto-char (point-min))
@@ -269,7 +271,7 @@ require (
               "module m
 go 1.20
 require gitlab.internal/foo/bar v1.0.0
-")))
+" t)))
     (unwind-protect
         (go-mod-ts-extras-test--with-env "GOPRIVATE" "gitlab.internal/*"
           (with-current-buffer buf
@@ -286,7 +288,7 @@ require gitlab.internal/foo/bar v1.0.0
               "module m
 go 1.20
 require github.com/x v1.0.0
-")))
+" t)))
     (unwind-protect
         (go-mod-ts-extras-test--with-env "GOPRIVATE" "gitlab.internal/*"
           (with-current-buffer buf
@@ -304,7 +306,7 @@ require github.com/x v1.0.0
               "module m
 go 1.20
 require foo.corp.com/lib v1.0.0
-")))
+" t)))
     (unwind-protect
         (go-mod-ts-extras-test--with-env "GOPRIVATE" "*.corp.com"
           (with-current-buffer buf
@@ -322,7 +324,7 @@ require foo.corp.com/lib v1.0.0
               "module m
 go 1.20
 require foo/bar.corp.com v1.0.0
-")))
+" t)))
     (unwind-protect
         (go-mod-ts-extras-test--with-env "GOPRIVATE" "*.corp.com"
           (with-current-buffer buf
@@ -346,7 +348,7 @@ require foo/bar.corp.com v1.0.0
                   "module m
 go 1.20
 require github.com/x v1.0.0
-")))
+" t)))
         (unwind-protect
             (with-current-buffer buf
               (goto-char (point-min))
@@ -364,7 +366,7 @@ require github.com/x v1.0.0
   (let ((buf (go-mod-ts-extras-test--with-buffer
               "module m
 go 1.20
-")))
+" t)))
     (unwind-protect
         (with-current-buffer buf
           (goto-char (point-min))
@@ -383,7 +385,7 @@ go 1.20
                 "module m
 go 1.20
 require github.com/x v1.0.0
-")))
+" t)))
       (unwind-protect
           (with-current-buffer buf
             (goto-char (point-min))
@@ -401,7 +403,7 @@ require github.com/x v1.0.0
               "module m
 go 1.20
 require github.com/x v1.0.0
-")))
+" t)))
     (unwind-protect
         (go-mod-ts-extras-test--with-env "GOMODCACHE" "/opt/gocache"
           (with-current-buffer buf
@@ -420,7 +422,7 @@ require github.com/x v1.0.0
                 "module m
 go 1.20
 require github.com/x v1.0.0
-")))
+" t)))
       (unwind-protect
           (with-current-buffer buf
             (goto-char (point-min))
@@ -437,7 +439,7 @@ require github.com/x v1.0.0
     (let ((buf (go-mod-ts-extras-test--with-buffer
                 "module m
 go 1.20
-")))
+" t)))
       (unwind-protect
           (with-current-buffer buf
             (goto-char (point-min))
@@ -459,7 +461,7 @@ go 1.20
                 "module m
 go 1.20
 require golang.org/x/net v0.20.0
-")))
+" t)))
       (unwind-protect
           (with-current-buffer buf
             (goto-char (point-min))
@@ -477,7 +479,7 @@ require golang.org/x/net v0.20.0
                 "module m
 go 1.20
 require gitlab.internal/foo/bar v1.0.0
-")))
+" t)))
       (unwind-protect
           (go-mod-ts-extras-test--with-env "GOPRIVATE" "gitlab.internal/*"
             (with-current-buffer buf
@@ -496,7 +498,7 @@ require gitlab.internal/foo/bar v1.0.0
                 "module m
 go 1.20
 require github.com/BurntSushi/TOML v1.0.0
-")))
+" t)))
       (unwind-protect
           (with-current-buffer buf
             (goto-char (point-min))
@@ -505,6 +507,81 @@ require github.com/BurntSushi/TOML v1.0.0
             (should (equal (thing-at-point 'filename)
                            "/tmp/cache/github.com/!burnt!sushi/!t!o!m!l@v1.0.0/")))
         (kill-buffer buf)))))
+
+(ert-deftest go-mod-ts-extras-filename-local-dir-replace ()
+  "Replace spec targeting a local directory returns that directory."
+  (skip-unless (treesit-ready-p 'gomod))
+  (let ((buf (go-mod-ts-extras-test--with-buffer
+              "module m
+
+go 1.20
+
+replace example.com/foo => ./local-fork
+" t)))
+    (unwind-protect
+        (with-current-buffer buf
+          (goto-char (point-min))
+          (search-forward "./local-fork")
+          (goto-char (match-beginning 0))
+          (should (equal (thing-at-point 'filename) "./local-fork")))
+      (kill-buffer buf))))
+
+(ert-deftest go-mod-ts-extras-url-local-dir-replace ()
+  "Replace spec targeting a local directory should NOT return a URL."
+  (skip-unless (treesit-ready-p 'gomod))
+  (let ((buf (go-mod-ts-extras-test--with-buffer
+              "module m
+
+go 1.20
+
+replace example.com/foo => ./local-fork
+" t)))
+    (unwind-protect
+        (with-current-buffer buf
+          (goto-char (point-min))
+          (search-forward "./local-fork")
+          (goto-char (match-beginning 0))
+          (should-not (thing-at-point 'url)))
+      (kill-buffer buf))))
+
+(ert-deftest go-mod-ts-extras-url-replace-version ()
+  "Point on a version in a replace spec resolves to the replacement module URL."
+  (skip-unless (treesit-ready-p 'gomod))
+  (let ((buf (go-mod-ts-extras-test--with-buffer
+              "module m
+
+go 1.20
+
+replace golang.org/x/net v1.9.9 => github.com/other/net v0.1.0
+" t)))
+    (unwind-protect
+        (with-current-buffer buf
+          ;; Point on the replacement (second) version.
+          (goto-char (point-min))
+          (search-forward "v0.1.0")
+          (goto-char (match-beginning 0))
+          (should (equal (thing-at-point 'url)
+                         "https://pkg.go.dev/github.com/other/net@v0.1.0")))
+      (kill-buffer buf))))
+
+(ert-deftest go-mod-ts-extras-url-replace-original-version ()
+  "Point on the ORIGINAL version in a replace spec should NOT return a URL."
+  (skip-unless (treesit-ready-p 'gomod))
+  (let ((buf (go-mod-ts-extras-test--with-buffer
+              "module m
+
+go 1.20
+
+replace golang.org/x/net v1.9.9 => github.com/other/net v0.1.0
+" t)))
+    (unwind-protect
+        (with-current-buffer buf
+          ;; Point on the original (first) version.
+          (goto-char (point-min))
+          (search-forward "v1.9.9")
+          (goto-char (match-beginning 0))
+          (should-not (thing-at-point 'url)))
+      (kill-buffer buf))))
 
 ;;; Mode enable/disable tests
 
@@ -518,7 +595,7 @@ require github.com/BurntSushi/TOML v1.0.0
 go 1.20
 
 require github.com/google/uuid v1.6.0
-")))
+" t)))
       (unwind-protect
           (with-current-buffer buf
             (goto-char (point-min))
@@ -538,6 +615,31 @@ require github.com/google/uuid v1.6.0
                           (not (string-prefix-p "/tmp/gocache/" f))))))
         (kill-buffer buf)))))
 
+(ert-deftest go-mod-ts-extras-mode-off-state ()
+  "With the mode never enabled, our providers must not be registered."
+  (skip-unless (treesit-ready-p 'gomod))
+  (let ((go-mod-ts-extras-pkg-file-prefix "/tmp/gocache/"))
+    (let ((buf (go-mod-ts-extras-test--with-buffer
+                "module m
+
+go 1.20
+
+require github.com/google/uuid v1.6.0
+"
+                nil)))
+      (unwind-protect
+          (with-current-buffer buf
+            (goto-char (point-min))
+            (search-forward "github.com/google/uuid")
+            (goto-char (match-beginning 0))
+            ;; No pkg.go.dev URL (our provider is not registered).
+            (should-not (thing-at-point 'url))
+            ;; Filename falls back to Emacs defaults, never the cache path.
+            (let ((f (thing-at-point 'filename)))
+              (should (or (not f)
+                          (not (string-prefix-p "/tmp/gocache/" f))))))
+        (kill-buffer buf)))))
+
 (ert-deftest go-mod-ts-extras-mode-idempotent ()
   "Enabling the mode twice should not double-register providers."
   (skip-unless (treesit-ready-p 'gomod))
@@ -545,7 +647,7 @@ require github.com/google/uuid v1.6.0
               "module m
 go 1.20
 require github.com/x v1.0.0
-")))
+" t)))
     (unwind-protect
         (with-current-buffer buf
           (let ((count-before (length thing-at-point-provider-alist)))
@@ -561,7 +663,7 @@ require github.com/x v1.0.0
               "module m
 go 1.20
 require github.com/x v1.0.0
-")))
+" t)))
     (unwind-protect
         (with-current-buffer buf
           ;; Inject a fake third-party url provider
@@ -591,7 +693,7 @@ require github.com/x v1.0.0
 go 1.20
 
 require github.com/google/uuid v1.6.0
-")))
+" t)))
     (unwind-protect
         (with-current-buffer buf
           (goto-char (point-min))
@@ -613,7 +715,7 @@ require github.com/google/uuid v1.6.0
 go 1.20
 
 require golang.org/x/net v0.20.0
-")))
+" t)))
     (unwind-protect
         (with-current-buffer buf
           (goto-char (point-min))
@@ -634,7 +736,7 @@ require golang.org/x/net v0.20.0
               "module m
 
 go 1.20
-")))
+" t)))
     (unwind-protect
         (with-current-buffer buf
           (goto-char (point-min))
@@ -653,7 +755,7 @@ go 1.20
 go 1.26.3
 
 require github.com/x v1.0.0
-")))
+" t)))
     (unwind-protect
         (with-current-buffer buf
           (font-lock-ensure)
@@ -673,7 +775,7 @@ require github.com/x v1.0.0
 go 1.26.3
 
 require github.com/x v1.0.0
-")))
+" t)))
     (unwind-protect
         (with-current-buffer buf
           (font-lock-ensure)

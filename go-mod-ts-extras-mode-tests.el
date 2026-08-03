@@ -766,6 +766,50 @@ require github.com/x v1.0.0
                            treesit-font-lock-settings)))
       (kill-buffer buf))))
 
+(ert-deftest go-mod-ts-extras-font-lock-underlines-module-path ()
+  "Enabling the mode underlines module paths in require/replace specs.
+
+Regression test: the rule used to be silently disabled because
+`go-mod-ts-extras--enable' recomputed font-lock features with no
+arguments, resetting enablement from `treesit-font-lock-feature-list'
+which does not contain the `go-mod-extras' feature."
+  (skip-unless (treesit-ready-p 'gomod))
+  (let ((buf (go-mod-ts-extras-test--with-buffer
+              "module m
+
+go 1.26.3
+
+require github.com/x v1.0.0
+" t)))
+    (unwind-protect
+        (with-current-buffer buf
+          (font-lock-ensure)
+          (goto-char (point-min))
+          (search-forward "github.com/x")
+          (let ((face (get-text-property (match-beginning 0) 'face)))
+            (should (eq face 'go-mod-ts-extras-module-path-face))
+            (should (face-underline-p face))))
+      (kill-buffer buf))))
+
+(ert-deftest go-mod-ts-extras-font-lock-underlines-replace-target ()
+  "Underlines the replacement module_path in a replace spec."
+  (skip-unless (treesit-ready-p 'gomod))
+  (let ((buf (go-mod-ts-extras-test--with-buffer
+              "module m
+
+go 1.26.3
+
+replace old.example/a v1.0.0 => new.example/b v2.0.0
+" t)))
+    (unwind-protect
+        (with-current-buffer buf
+          (font-lock-ensure)
+          (goto-char (point-min))
+          (search-forward "new.example/b")
+          (should (eq (get-text-property (match-beginning 0) 'face)
+                      'go-mod-ts-extras-module-path-face)))
+      (kill-buffer buf))))
+
 (ert-deftest go-mod-ts-extras-font-lock-removes-rules ()
   "Disabling the mode removes our font-lock rules."
   (skip-unless (treesit-ready-p 'gomod))

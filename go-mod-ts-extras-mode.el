@@ -296,7 +296,10 @@ When enabled, this mode:
   (when go-mod-ts-extras-highlight-modules
     (treesit-add-font-lock-rules
      go-mod-ts-extras--font-lock-rules)
-    (treesit-font-lock-recompute-features)
+    ;; Enable just our feature.  A bare `treesit-font-lock-recompute-features'
+    ;; call would reset enablement from `treesit-font-lock-feature-list',
+    ;; which does not contain `go-mod-extras', silently disabling our rule.
+    (treesit-font-lock-recompute-features '(go-mod-extras))
     (font-lock-flush)
     (font-lock-ensure)))
 
@@ -320,7 +323,9 @@ When enabled, this mode:
     (setq-local treesit-font-lock-settings
                 (cl-remove 'go-mod-extras treesit-font-lock-settings
                            :key (lambda (s) (nth 2 s))))
-    (treesit-font-lock-recompute-features)
+    ;; Our rule is gone; no recompute needed.  (A bare
+    ;; `treesit-font-lock-recompute-features' call would reset other
+    ;; features' enablement from `treesit-font-lock-feature-list'.)
     (font-lock-flush)
     (font-lock-ensure)))
 

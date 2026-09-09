@@ -22,7 +22,8 @@ and the `gomod` tree-sitter grammar.
 
 - `go-mod-ts-extras-mode.el` — the package implementation.
 - `go-mod-ts-extras-mode-tests.el` — ERT test suite.
-- `default.nix` — Nix build with `melpaBuild` and a `checkPhase` running ERT.
+- `flake.nix` — Nix flake (flake-parts) building the package with
+  `melpaBuild` and a `checkPhase` running ERT.
 - `LICENSE` — GNU AGPL-3.0-or-later.
 
 ## Commands
@@ -38,7 +39,7 @@ emacs --batch -L . \
 Build through Nix (also runs the check phase):
 
 ```sh
-nix-build
+nix build
 ```
 
 Tests that need the `gomod` grammar skip themselves when it is not
@@ -58,7 +59,7 @@ full suite.
   `generate-new-buffer`, and cleanup uses `unwind-protect`.
 - Keep the package free of external runtime dependencies beyond Emacs
   itself.
-- Keep `default.nix` metadata (`version`, `description`, `license`) in
+- Keep `flake.nix` metadata (`version`, `description`, `license`) in
   sync with the package headers and any user-visible behavior changes.
 
 ## Behavioral invariants

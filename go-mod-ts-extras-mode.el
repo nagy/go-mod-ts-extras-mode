@@ -1,4 +1,4 @@
-;;; go-mod-ts-extras-mode.el --- pkg.go.dev extras for go-mod-ts-mode -*- lexical-binding: t -*-
+;;; go-mod-ts-extras-mode.el --- pkg.go.dev extras  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026  Daniel Nagy
 
@@ -49,13 +49,13 @@
 (require 'treesit)
 
 (defgroup go-mod-ts-extras nil
-  "go.mod extras for `go-mod-ts-mode'."
+  "Customization group for go.mod extras in `go-mod-ts-mode'."
   :group 'go
   :prefix "go-mod-ts-extras-")
 
 (defcustom go-mod-ts-extras-pkg-url-template
   "https://pkg.go.dev/%s@%s"
-  "URL template for Go module packages.
+  "Template for the pkg.go.dev URL of a Go module.
 `%s' placeholders receive the module path and version, respectively."
   :type 'string
   :group 'go-mod-ts-extras)
@@ -178,7 +178,8 @@ GOPRIVATE is a comma-separated list of glob patterns in Go's
 
 (defun go-mod-ts-extras--module-cache-path (module-path version)
   "Return the filesystem path for MODULE-PATH@VERSION in the Go module cache.
-Go's module cache escapes uppercase letters as `!lowercase' (module.EscapePath).
+Go's module cache escapes uppercase letters as `!lowercase', like
+`module.EscapePath' does.
 Note: this matches the cache directory naming for module paths, but is a
 heuristic for full paths: pseudo-versions escape `+' as `!pseudo' and literal
 `!' characters are doubled, which this does not account for."
@@ -211,7 +212,7 @@ fixing the bug where a replace spec `old v1 => new v2' returned v1."
       (cons module-path version))))
 
 (defun go-mod-ts-extras--url-provider ()
-  "Return a pkg.go.dev URL if point is on a module_path in a require/replace spec.
+  "Return the pkg.go.dev URL for the module path at point.
 Returns nil for private modules (matching GOPRIVATE)."
   (when-let* ((spec (go-mod-ts-extras--spec-info))
               ((not (go-mod-ts-extras--private-p (car spec)))))
@@ -219,7 +220,7 @@ Returns nil for private modules (matching GOPRIVATE)."
             (car spec) (cdr spec))))
 
 (defun go-mod-ts-extras--filename-provider ()
-  "Return a local file path if point is on a module_path in a require/replace spec.
+  "Return the local file path for the module path at point, or nil.
 The path respects Go's module cache escaping (uppercase → !lowercase).
 For a replace spec targeting a local directory (`replace a => ./dir'),
 returns that directory itself."
@@ -255,7 +256,8 @@ returns that directory itself."
 ;;;###autoload
 (defun go-mod-ts-extras-browse-at-point ()
   "Open the pkg.go.dev URL for the module path at point in a browser.
-Not bound to any key by default; bind it yourself or use \\[execute-extended-command]."
+No key binds it by default.  Bind it yourself or use
+\\[execute-extended-command]."
   (interactive)
   (if-let* ((url (thing-at-point 'url)))
       (browse-url url)
@@ -275,7 +277,7 @@ When enabled, this mode:
     (go-mod-ts-extras--disable)))
 
 (defun go-mod-ts-extras--enable ()
-  "Register thing-at-point providers and treesit font-lock rules."
+  "Register `thing-at-point' providers and treesit font-lock rules."
   ;; Thing-at-point providers (url and filename).
   ;; Remove-first-then-add for idempotency; use exact-pair removal so
   ;; other packages' providers are not deleted.
@@ -304,7 +306,7 @@ When enabled, this mode:
     (font-lock-ensure)))
 
 (defun go-mod-ts-extras--disable ()
-  "Unregister thing-at-point providers and treesit font-lock rules."
+  "Unregister `thing-at-point' providers and treesit font-lock rules."
   ;; Thing-at-point providers.  Remove our exact pairs only.
   (setq-local thing-at-point-provider-alist
               (remove '(url . go-mod-ts-extras--url-provider)

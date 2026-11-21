@@ -15,9 +15,8 @@
 
 ## Build and test
 
-- `nix flake check` — the `lint` check (package-lint plus checkdoc) and the
-  `treefmt` check. The lint check covers the root files and `test/*.el`.
-- `nix build` — the package. The checkPhase runs ERT over `test/*-test.el`.
+- `nix flake check` — the gate.
+- `nix build` — the package.
 - `nix fmt` — format the repo.
 - `emacs --batch -L . -L test -l test/go-mod-ts-extras-mode-test.el -f
   ert-run-tests-batch-and-exit` — run the suite by hand.

@@ -26,8 +26,15 @@ nix build
 nix flake check
 ```
 
-`nix flake check` runs the `lint` check (package-lint + checkdoc).
+`nix flake check` runs the `lint` check (package-lint + checkdoc) and the
+`treefmt` check.
 The lint check covers the root files and `test/*.el`.
+
+Format the repo:
+
+```sh
+nix fmt
+```
 
 Some tests need the `gomod` grammar.
 These tests skip themselves when the grammar is absent.
@@ -46,7 +53,12 @@ For a manual run, supply the grammar through `treesit-grammars.with-all-grammars
   Name every `ert-deftest` with the `go-mod-ts-extras-` prefix.
 - Keep `test/<unit>-test.el` free of `Package-Requires`.
   The lint check sets `package-lint-main-file` instead.
-- After a user-visible behavior change, keep the `flake.nix` metadata (`version`, `description`, `license`) in sync with the package headers.
+- After a user-visible behavior change, keep the `flake.nix` metadata (`description`, `license`) in sync with the package headers.
+- Keep the `;; Version:` header at the upstream value.
+  `flake.nix` appends `-unstable-<YYYY-MM-DD>` to it, because upstream has no release yet.
+  The date comes from the flake source info, so do not hardcode it.
+- Expose no `apps.default`.
+  The package is an Elisp library, so it has no executable.
 
 ## Behavioral invariants
 

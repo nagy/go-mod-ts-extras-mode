@@ -4,15 +4,35 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
+    treefmt-nix = {
+      url = "github:numtide/treefmt-nix";
+      # One nixpkgs closure: treefmt-nix must build against the same
+      # nixpkgs as everything else, or the formatter drv pulls a second copy.
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
     inputs@{
       flake-parts,
       nixpkgs,
+      treefmt-nix,
       ...
     }:
+    # Date of the last commit as YYYY-MM-DD, used by the version string
+    # below.  Flake source info gives it as e.g. "20260922133522", so
+    # slice out the year, month and day and glue them with hyphens.
+    let
+      lastModifiedDate = inputs.self.sourceInfo.lastModifiedDate;
+      commitDate = "${builtins.substring 0 4 lastModifiedDate}-${
+        builtins.substring 4 2 lastModifiedDate
+      }-${builtins.substring 6 2 lastModifiedDate}";
+    in
     flake-parts.lib.mkFlake { inherit inputs; } {
+      # The formatter lives in the flake, so `nix fmt' needs no repo-local
+      # config file and newer nixfmt options do not drift from the store.
+      imports = [ treefmt-nix.flakeModule ];
+
       systems = [
         "x86_64-linux"
         "aarch64-linux"
@@ -35,8 +55,12 @@
         {
           packages.go-mod-ts-extras-mode = melpaBuild {
             pname = "go-mod-ts-extras-mode";
-            # Matches the ;; Version: header in go-mod-ts-extras-mode.el.
-            version = "0.1.0";
+            # Upstream has no release yet, so follow the nixpkgs convention
+            # for unreleased packages: <header-version>-unstable-<date>, with
+            # the date taken from the flake source info so it never goes
+            # stale.  The `;; Version:' header keeps the plain upstream
+            # value; only the Nix version carries the date.
+            version = "0.1.0-unstable-${commitDate}";
 
             src = lib.cleanSource ./.;
 
@@ -95,6 +119,16 @@
 
           packages.default = config.packages.go-mod-ts-extras-mode;
 
+          # No `apps.default': this is an Elisp library with no executable,
+          # so any program entry would only start Emacs with the package on
+          # `load-path'.
+
+          # treefmt-nix has no Elisp formatter, so this formats the flake
+          # itself.  Add more programs here if the repo gains other files.
+          treefmt = {
+            programs.nixfmt.enable = true;
+          };
+
           checks.lint =
             pkgs.runCommand "go-mod-ts-extras-mode-lint"
               {
@@ -133,7 +167,9 @@
           devShells.default = pkgs.mkShell {
             # A real Emacs for interactive testing, with the gomod grammar
             # on the tree-sitter search path so font-lock and ERT work.
+            # `nix fmt' resolves the wrapper through the flake, not PATH.
             packages = [
+              config.treefmt.build.wrapper
               (pkgs.emacs.pkgs.withPackages [ treesitGrammars ])
             ];
           };

@@ -10,21 +10,29 @@ The `;;; Commentary:` header in `go-mod-ts-extras-mode.el` holds the feature lis
 Run the ERT suite:
 
 ```sh
-emacs --batch -L . \
-  -l go-mod-ts-extras-mode-tests.el \
+emacs --batch -L . -L test \
+  -l test/go-mod-ts-extras-mode-test.el \
   -f ert-run-tests-batch-and-exit
 ```
 
 Build through Nix.
-The `checkPhase` runs ERT:
+The `checkPhase` runs ERT over `test/*-test.el`:
 
 ```sh
 nix build
 ```
 
+```sh
+nix flake check
+```
+
+`nix flake check` runs the `lint` check (package-lint + checkdoc).
+The lint check covers the root files and `test/*.el`.
+
 Some tests need the `gomod` grammar.
 These tests skip themselves when the grammar is absent.
-Supply the grammar through `treesit-grammars.with-all-grammars` or an equivalent method before you run the full suite.
+The Nix `checkPhase` puts the grammar on `treesit-extra-load-path` for you.
+For a manual run, supply the grammar through `treesit-grammars.with-all-grammars` or an equivalent method.
 
 ## Conventions
 
@@ -33,6 +41,11 @@ Supply the grammar through `treesit-grammars.with-all-grammars` or an equivalent
 - Use `cl-lib` functions (`cl-loop`, `cl-letf`, etc.).
   Do not use the deprecated `cl` counterparts.
 - Keep the package free of external runtime dependencies beyond Emacs itself.
+- Put tests in `test/`, one file per source unit, named `<unit>-test.el`.
+  Shared helpers stay in the test file or in `test/<name>-test-helper.el`.
+  Name every `ert-deftest` with the `go-mod-ts-extras-` prefix.
+- Keep `test/<unit>-test.el` free of `Package-Requires`.
+  The lint check sets `package-lint-main-file` instead.
 - After a user-visible behavior change, keep the `flake.nix` metadata (`version`, `description`, `license`) in sync with the package headers.
 
 ## Behavioral invariants

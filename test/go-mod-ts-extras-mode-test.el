@@ -1,4 +1,4 @@
-;;; go-mod-ts-extras-mode-tests.el --- Tests for go-mod-ts-extras-mode -*- lexical-binding: t -*-
+;;; go-mod-ts-extras-mode-test.el --- Tests for go-mod-ts-extras-mode  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026  Daniel Nagy
 
@@ -23,6 +23,8 @@
 ;;
 ;; Then: M-x ert RET t
 
+;;; Code:
+
 (require 'go-mod-ts-extras-mode)
 (require 'ert)
 (require 'cl-lib)
@@ -45,8 +47,8 @@ When ENABLE is nil, leaves the mode disabled."
     buf))
 
 (defmacro go-mod-ts-extras-test--with-env (varname value &rest body)
-  "Execute BODY with environment variable VARNAME set to VALUE.
-Restores the previous value afterwards."
+  "Set environment variable VARNAME to VALUE while evaluating BODY.
+Restore the previous value afterwards."
   (declare (indent 2))
   `(let ((old-val (getenv ,varname)))
      (unwind-protect
@@ -832,5 +834,5 @@ require github.com/x v1.0.0
                                treesit-font-lock-settings)))
       (kill-buffer buf))))
 
-(provide 'go-mod-ts-extras-mode-tests)
-;;; go-mod-ts-extras-mode-tests.el ends here
+(provide 'go-mod-ts-extras-mode-test)
+;;; go-mod-ts-extras-mode-test.el ends here

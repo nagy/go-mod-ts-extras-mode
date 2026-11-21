@@ -1,4 +1,4 @@
-;;; go-mod-ts-extras-mode.el --- pkg.go.dev extras  -*- lexical-binding: t; -*-
+;;; go-mod-ts-extras-mode.el --- Pkg.go.dev extras  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026  Daniel Nagy
 

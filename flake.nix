@@ -130,7 +130,7 @@
           };
 
           checks.lint =
-            pkgs.runCommand "go-mod-ts-extras-mode-lint"
+            pkgs.runCommandLocal "go-mod-ts-extras-mode-lint"
               {
                 nativeBuildInputs = [
                   (pkgs.emacsPackages.emacsWithPackages (p: [ p.package-lint ]))

@@ -55,6 +55,7 @@
         {
           packages.go-mod-ts-extras-mode = melpaBuild {
             pname = "go-mod-ts-extras-mode";
+            preferLocalBuild = true;
             # Upstream has no release yet, so follow the nixpkgs convention
             # for unreleased packages: <header-version>-unstable-<date>, with
             # the date taken from the flake source info so it never goes
